@@ -1,0 +1,467 @@
+---
+title: "snaQe"
+author: "Shay"
+date: "May 2, 2020"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+```{r}
+
+library(reshape2)
+library(seriation)
+library(plot.matrix)
+library(MDPtoolbox)
+library(reinforcelearn)
+library(linprog)
+library(devtools)
+library(qLearn)
+
+
+```
+
+
+
+```{r}
+world_row = 4 
+world_col = 4 
+snake_start_len = 1 
+start_poss_row = as.integer(round((world_row+1+snake_start_len)/2))
+start_poss_col = as.integer(round((world_col+1+snake_start_len)/2))
+snake_start_poss = matrix(c(start_poss_row,start_poss_col), nrow=1, ncol=2)
+apple_start_num=1 
+apple_rep = 10
+apple_reward = 10  
+wall_rep = -99
+wall_reward = -10
+big_apple = 1
+gamma=0.9
+epsilon = 0.01
+```
+
+
+```{r}
+
+#left	             11|12|13|14|21|22|23|24|31|32|33|34|41|42|43|44|wall
+p_left <-  matrix(c(0, 0, 0, 0,	0, 0,	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, #11
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, #12
+                  	0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, #13
+                    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 0, #14
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, #21
+                    0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 0, #22
+                    0, 0, 0 ,0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, #23
+                    0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, #24
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 1, #31
+                    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, #32
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, #33
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, #34
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, #41
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, #42
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, #43
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, #44
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),#wall
+                    nrow=17, ncol=17, byrow=TRUE)
+#right	             11|12|13|14|21|22|23|24|31|32|33|34|41|42|43|44|wall
+p_right <- matrix(c(0, 1, 0, 0,	0, 0,	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  	0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 0,
+                    0, 0, 0 ,0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 ,0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
+                    nrow=17, ncol=17, byrow=TRUE)
+#right	             11|12|13|14|21|22|23|24|31|32|33|34|41|42|43|44|wall
+p_up <-    matrix(c(0, 0, 0, 0,	0, 0,	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                  	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 1,
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0, 0,
+                    0, 0, 1 ,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0, 0, 0,
+                    0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
+                    nrow=17, ncol=17, byrow=TRUE)
+#down	             11|12|13|14|21|22|23|24|31|32|33|34|41|42|43|44|wall
+p_down <-  matrix(c(0, 0, 0, 0,	1, 0,	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  	0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0 ,0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 ,0, 0, 0, 0,
+                    0, 0, 0 ,0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0 ,0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
+                    nrow=17, ncol=17, byrow=TRUE)
+                  # left right up down
+
+transition_p <-  list(left=p_left, right=p_right, up=p_up, down=p_down)
+
+```
+
+```{r}
+transition_p_update <- function(reward, p_left_new=p_left,
+                                        p_right_new=p_right,
+                                        p_up_new=p_up,
+                                        p_down_new=p_down){
+
+  re_pos <- which(reward[,1] < 0)
+p_left_new[re_pos,]=0
+p_right_new[re_pos,]=0
+p_up_new[re_pos,]=0
+p_down_new[re_pos,]=0
+for (i in re_pos){
+  p_left_new[i,i]=1
+  p_right_new[i,i]=1
+  p_up_new[i,i]=1
+  p_down_new[i,i]=1
+  }
+transition_p_new <- list(left=p_left_new, right=p_right_new, up=p_up_new, down=p_down_new) 
+
+return(transition_p_new)  
+}
+
+```
+
+
+
+
+
+```{r}
+game_reward <- function(game=start_pos(), head_snake_poss= matrix(c(start_poss_row+1,start_poss_col+1), nrow=1, ncol=2, byrow=TRUE)){
+game[head_snake_poss]=0
+  r <-   matrix(c( game[1+1,1+1], game[1+1,1+1], game[1+1,1+1], game[1+1,1+1], #11
+                      game[1+1,2+1], game[1+1,2+1], game[1+1,2+1], game[1+1,2+1], #12
+                      game[1+1,3+1], game[1+1,3+1], game[1+1,3+1], game[1+1,3+1], #13
+                      game[1+1,4+1], game[1+1,4+1], game[1+1,4+1], game[1+1,4+1], #14
+                      game[2+1,1+1], game[2+1,1+1], game[2+1,1+1], game[2+1,1+1], #21
+                      game[2+1,2+1], game[2+1,2+1], game[2+1,2+1], game[2+1,2+1], #22
+                      game[2+1,3+1], game[2+1,3+1], game[2+1,3+1], game[2+1,3+1], #23
+                      game[2+1,4+1], game[2+1,4+1], game[2+1,4+1], game[2+1,4+1], #24
+                      game[3+1,1+1], game[3+1,1+1], game[3+1,1+1], game[3+1,1+1], #31
+                      game[3+1,2+1], game[3+1,2+1], game[3+1,2+1], game[3+1,2+1], #32
+                      game[3+1,3+1], game[3+1,3+1], game[3+1,3+1], game[3+1,3+1], #33
+                      game[3+1,4+1], game[3+1,4+1], game[3+1,4+1], game[3+1,4+1], #34
+                      game[4+1,1+1], game[4+1,1+1], game[4+1,1+1], game[4+1,1+1], #41
+                      game[4+1,2+1], game[4+1,2+1], game[4+1,2+1], game[4+1,2+1], #42
+                      game[4+1,3+1], game[4+1,3+1], game[4+1,3+1], game[4+1,3+1], #43
+                      game[4+1,4+1], game[4+1,4+1], game[4+1,4+1], game[4+1,4+1], #44
+                      wall_reward, wall_reward, wall_reward, wall_reward), #wall
+                   nrow=17, ncol=4, byrow=TRUE
+  )
+return(r)
+}
+
+
+```
+
+
+
+```{r}
+wall_up <-  function(x){ #create the walls
+  x[1,]=wall_rep
+  x[world_row+2,]=wall_rep
+  x[,1]=wall_rep
+  x[,world_col+2]=wall_rep
+return(x)
+  }
+
+```
+
+
+
+```{r}
+new_apple <-  function(game,n=1,apple=apple_rep){# put an apple in rundom empty place
+for (i in 1:n){
+  empty_cells=which(game == 0, arr.ind = T)
+  x=sample(1:(length(empty_cells)/2), 1)
+  game[empty_cells[x,1],empty_cells[x,2]] <- apple
+}
+
+return(game)
+}
+
+```
+
+
+```{r}
+start_pos <- function(snake_poss=snake_start_poss){
+  start_game=matrix(0, nrow = world_row+2, ncol = world_col+2)
+  start_game[snake_poss]=snake_start_len-2
+  start_game <- wall_up(start_game)
+  start_game <- new_apple(start_game)
+return(start_game)}
+
+```
+
+```{r}
+game_move <- function(g,head_pos, move,eat=0){
+  if (move=="left"){
+    g[head_pos[1,1],head_pos[1,2]-1] <- g[head_pos]-1
+   snake_pos <- which(g < 0, arr.ind = T)
+   g[snake_pos]=g[snake_pos]+1-eat
+  }
+  if (move=="right"){
+    g[head_pos[1,1],head_pos[1,2]+1] <- g[head_pos]-1
+  snake_pos <- which(g < 0, arr.ind = T)
+   g[snake_pos]=g[snake_pos]+1-eat
+  }
+  if (move=="up"){
+    g[head_pos[1,1]-1,head_pos[1,2]] <- g[head_pos]-1
+    snake_pos <- which(g < 0, arr.ind = T)
+   g[snake_pos]=g[snake_pos]+1-eat
+   }
+  if (move=="down"){
+    g[head_pos[1,1]+1,head_pos[1,2]] <- g[head_pos]-1
+    snake_pos <- which(g < 0, arr.ind = T)
+   g[snake_pos]=g[snake_pos]+1-eat
+   }
+  return(g) 
+}
+
+
+```
+
+
+```{r}
+readkey <- function()
+{
+    cat ("get the next move up[w] left[a] down[s] right[d]")
+    k <- readline()
+    return(k)
+}
+
+```
+
+
+```{r}
+play_game <- function( head_pos=snake_start_poss){
+score=0
+game_crash =as.logical(0)
+game <-  start_pos()
+
+while (!game_crash){
+ plot(game, breaks=c(-99,-20,game[head_pos]+0.5,-0.5,0.5,11), col=c('red','black', 'green',  'white', 'blue'))
+  print(game)
+  move <- readkey()
+  if (move=="a"){move <- "left"}
+  else  if (move=="d"){move <- "right"}
+  else  if (move=="w"){move <- "up"}
+  else  if (move=="s"){move <- "down"}
+  else print("wrong move")
+   Sys.sleep(.01)
+  
+  if (move=="left"){
+    #move <- "left"
+    next_pos <-  matrix(c(head_pos[1],(head_pos[2])-1),1,2)
+  }
+  else if (move=="right"){ 
+    #move <- "right"
+   next_pos <-matrix(c(head_pos[1],(head_pos[2])+1),1,2)
+  
+  }
+  else if (move=="up") { 
+    #move <- "up"
+  next_pos <-matrix(c(head_pos[1]-1,(head_pos[2])),1,2)
+  
+  }
+  else if (move=="down"){ 
+    #move <- "down"
+  next_pos <-matrix(c(head_pos[1]+1,(head_pos[2])),1,2)
+  
+  }
+  else print("wrong move")
+  
+  if (game[next_pos]>0){
+    
+  game <- game_move(game,head_pos,move,big_apple) 
+  game <-  new_apple(game)
+  score=score+1
+  }
+  else if (game[next_pos]==0){
+  game <- game_move(game,head_pos,move,0) 
+  }
+   else if (game[next_pos]==-1){
+  game <- game_move(game,head_pos,move,0) 
+  }
+  else if (game[next_pos]<(-1)){
+    cat("game crash cant move to place :", next_pos, "value: ", game[next_pos], "\n")
+    cat("score: ",score )
+    game_crash=TRUE
+  }
+  head_pos <- next_pos
+  game <- wall_up(game)
+  }
+}
+
+```
+
+```{r}
+run_game <- function( head_pos=snake_start_poss, game=start_pos()){
+score=0
+game_crash =as.logical(0)
+
+while (!game_crash){
+ plot(game, breaks=c(-99,-20,game[head_pos]+0.5,-0.5,0.5,11), col=c('red','black', 'green',  'white', 'blue'))
+
+  print(game)
+ 
+   r <- game_reward(game,head_snake_poss=head_pos)
+   p <- transition_p_update(r) 
+  ###################### mdp_value_iteration
+    game_policy <-  mdp_value_iteration(P=p, R=r, discount=gamma  )
+
+    ###################### mdp_policy_iteration
+
+  #game_policy <-  mdp_policy_iteration(P=p, R=r, discount=gamma  )
+      ######################mdp_eval_policy_TD_0
+
+  #game_policy_TD <- mdp_eval_policy_TD_0 (P=p, R=r, discount=0.90, game_policy$policy  )
+  
+  
+  best_move <- names(transition_p)[game_policy$policy]
+  wall_v <- game_policy$V[17]
+  best_move <- matrix(best_move[1:16],4,4,byrow=TRUE)
+  V_mat <- matrix(game_policy$V[1:16],4,4,byrow=TRUE)
+  print(V_mat)
+  cat("wall V:", wall_v, "\n")
+  print(best_move)
+  cat("best move:", best_move[head_pos[1]-1, head_pos[2]-1], "\n")
+  cat("itr:",game_policy$iter, "\n")
+  cat("*********************************************************************", "\n")
+  move <- best_move[head_pos[1]-1, head_pos[2]-1]
+  #move <- readkey()
+  if (move=="a"){move <- "left"}
+  else  if (move=="d"){move <- "right"}
+  else  if (move=="w"){move <- "up"}
+  else  if (move=="s"){move <- "down"}
+  #else print("wrong move1")
+
+  Sys.sleep(1.71)
+  
+  if (move=="left"){
+    next_pos <-  matrix(c(head_pos[1],(head_pos[2])-1),1,2)
+  }
+  else if (move=="right"){ 
+   next_pos <-matrix(c(head_pos[1],(head_pos[2])+1),1,2)
+  }
+  else if (move=="up") { 
+  next_pos <-matrix(c(head_pos[1]-1,(head_pos[2])),1,2)
+  }
+  else if (move=="down"){ 
+  next_pos <-matrix(c(head_pos[1]+1,(head_pos[2])),1,2)
+  }
+  else {print("wrong move2")}
+  
+  if (game[next_pos]>0){
+  game <- game_move(game,head_pos,move,big_apple) 
+  game <-  new_apple(game)
+  score=score+1
+  }
+  else if (game[next_pos]==0){
+  game <- game_move(game,head_pos,move,0) 
+  }
+   else if (game[next_pos]==-1){
+  game <- game_move(game,head_pos,move,0) 
+  }
+  else if (game[next_pos]<(-1)){
+    cat("game crash cant move to place :", next_pos, "value: ", game[next_pos], "\n")
+    cat("score: ",score )
+    game_crash=TRUE
+  }
+  head_pos <- next_pos
+  game <- wall_up(game)
+  }
+}
+
+```
+
+
+
+
+```{r}
+
+test_1 <- matrix(c(0,0,0,-1,0,0,0,0,0,0,0,0,0,10,0,0),4,4)
+test_1 <-cbind(rep(0,4),test_1,rep(0,4))
+test_1 <-rbind(rep(0,6),test_1,rep(0,6))
+h_pos <- which(test_1 == -1, arr.ind = T)
+wall_up(test_1)
+r <- game_reward(test_1,h_pos)
+
+```
+
+
+
+```{r}
+
+for (k in 1:10){
+  test_mdp <-  mdp_value_iteration(P=transition_p, R=r,discount=0.9,epsilon=0.01,max_iter=k)
+  cat("iteration count = ",k, "\n" )
+  print(matrix(test_mdp$V[1:16],4,4,byrow=TRUE))
+  cat("wall V:", test_mdp$V[17], "\n")
+  
+}
+ test_mdp <-  mdp_value_iteration(P=transition_p, R=r,discount=0.9,epsilon=0.01)
+ cat("iteration count = ",test_mdp$iter, "\n" )  
+ print(matrix(test_mdp$V[1:16],4,4,byrow=TRUE))
+ cat("wall V:", test_mdp$V[17], "\n")
+
+```
+
+
+```{r}
+
+for (k in 1:10){
+   test_mdp <-  mdp_policy_iteration(P=transition_p, R=r, discount=0.9,max_iter=5, policy0=rep.int(sample(1:4,1),17 ))
+test_mdp$iter 
+  cat("iteration count = ",k, "\n" )
+  print(matrix(test_mdp$V[1:16],4,4,byrow=TRUE))
+  cat("wall V:", test_mdp$V[17], "\n")
+  
+}
+
+```
+
+
+
+```{r}
+test_with_eligibility_traces <- mdp_Q_learning(P=transition_p, R=r,discount=0.9)
+test_without_eligibility_traces <- mdp_Q_learning(P=transition_p, R=r,discount=1)
+colnames(test_with_eligibility_traces$Q) <- names(transition_p)
+colnames(test_without_eligibility_traces$Q) <- names(transition_p)
+print(test_with_eligibility_traces$Q)
+plot(test_with_eligibility_traces$mean_discrepancy,main="with eligibility traces", xlab="iterations",  ylab="mean discrepancy")
+print(test_without_eligibility_traces$Q)
+plot(test_without_eligibility_traces$mean_discrepancy,main="without eligibility traces", xlab="iterations",  ylab="mean discrepancy")
+
+```
+
+
+
